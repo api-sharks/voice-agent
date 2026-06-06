@@ -1,0 +1,53 @@
+<main class="page-shell">
+  <section class="hero-card">
+    <div class="eyebrow">Offline-first Voice Workflow</div>
+    <h1>Voice AI Form Agent</h1>
+    <p class="lead">
+      Speak naturally in English, Hindi, or Telugu-style phrases and let the form fill itself.
+    </p>
+
+    <div class="actions">
+      <button type="button" class="primary" (click)="start()" [disabled]="isListening">
+        Start Speaking
+      </button>
+      <button type="button" class="secondary" (click)="stop()" [disabled]="!isListening">
+        Stop
+      </button>
+      <button type="button" class="ghost" (click)="reset()">
+        Reset
+      </button>
+    </div>
+
+    <div class="status-strip">
+      <span class="label">Status</span>
+      <span>{{ status }}</span>
+    </div>
+  </section>
+
+  <section class="grid">
+    <article class="panel">
+      <h2>Transcript</h2>
+      <p class="transcript">{{ transcript || 'Your speech transcript will appear here.' }}</p>
+    </article>
+
+    <article class="panel">
+      <h2>Captured Form</h2>
+      <form [formGroup]="form" class="form">
+        <label>
+          <span>Name</span>
+          <input formControlName="name" placeholder="Name">
+        </label>
+
+        <label>
+          <span>Phone</span>
+          <input formControlName="phone" placeholder="Phone">
+        </label>
+
+        <label>
+          <span>City</span>
+          <input formControlName="city" placeholder="City">
+        </label>
+      </form>
+    </article>
+  </section>
+</main>
