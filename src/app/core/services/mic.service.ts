@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { WHISPER_SAMPLE_RATE } from './whisper.service';
 
 @Injectable({ providedIn: 'root' })
 export class MicService {
@@ -12,8 +13,17 @@ export class MicService {
       return;
     }
 
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    this.context = new AudioContext();
+    // echoCancellation keeps the assistant's TTS voice (played through the
+    // speakers) out of the mic signal as much as the platform allows
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    // Whisper expects 16kHz mono; the browser resamples the mic input for us
+    this.context = new AudioContext({ sampleRate: WHISPER_SAMPLE_RATE });
     this.source = this.context.createMediaStreamSource(this.stream);
     this.processor = this.context.createScriptProcessor(4096, 1, 1);
 
