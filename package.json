@@ -12,8 +12,13 @@
     "build": "npm --workspace=web run build",
     "dev:web": "npm --workspace=web run dev",
     "build:web": "npm --workspace=web run build",
+    "dev:nextjs": "npm --workspace=nextjs run dev",
+    "build:nextjs": "npm --workspace=nextjs run build",
     "build:shared": "npm --workspace=shared run build",
-    "turbo:build": "turbo run build"
+    "turbo:build": "turbo run build",
+    "pipecat:install": "cd packages/pipecat-backend && python -m pip install -r requirements.txt",
+    "pipecat:dev": "cd packages/pipecat-backend && python server.py",
+    "pipecat:setup": "cd packages/pipecat-backend && python -m venv venv && pip install -r requirements.txt && echo 'Setup complete. Copy .env.example to .env and add your API keys.'"
   },
   "devDependencies": {
     "turbo": "^2.9.18"

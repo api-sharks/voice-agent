@@ -9,7 +9,8 @@ Your project has been converted to a Turbo monorepo with npm workspaces.
 ```
 voice-agent/
 ├── packages/
-│   ├── web/               # Angular app (the main application)
+│   ├── web/               # Angular voice form app
+│   ├── nextjs/            # Next.js voice AI assistant (Whisper + WebLLM)
 │   └── shared/            # Shared services (for future use)
 ├── turbo.json            # Turbo configuration
 ├── tsconfig.json         # Root TypeScript config
@@ -22,26 +23,56 @@ voice-agent/
 # Install dependencies (run from root)
 npm install
 
-# Start development server
+# Angular app (http://localhost:4200)
 npm start
-# Opens dev server at http://localhost:4200
+npm run dev:web
+npm run build:web
 
-# Build for production
-npm run build
-# Output: C:\Projects\voice-agent\dist\voice-ai-form-advanced
+# Next.js Voice AI (http://localhost:3000)
+npm run dev:nextjs
+npm run build:nextjs
 
-# Build shared package (when you add services there)
-npm run build:shared
+# Build everything
+npm run turbo:build
 ```
 
 ## 📂 File Locations
 
-- **Source code**: `packages/web/src/`
-- **Main app**: `packages/web/src/app/app.component.ts`
+### Angular App (packages/web/)
+- **Main**: `packages/web/src/app/app.component.ts`
 - **Voice form**: `packages/web/src/app/features/voice-form/`
 - **Services**: `packages/web/src/app/core/services/`
-- **Styles**: `packages/web/src/styles.css`
 - **Assets** (Whisper WASM): `packages/web/src/assets/`
+
+### Next.js Voice AI (packages/nextjs/)
+- **Main page**: `packages/nextjs/app/page.tsx`
+- **Voice component**: `packages/nextjs/components/VoiceChat.tsx`
+- **Services**:
+  - Speech-to-text: `packages/nextjs/lib/services/whisper.service.ts`
+  - LLM inference: `packages/nextjs/lib/services/webllm.service.ts`
+  - Audio handling: `packages/nextjs/lib/services/audio.service.ts`
+- **Documentation**:
+  - Setup: `packages/nextjs/SETUP.md`
+  - Guide: `packages/nextjs/CLAUDE.md`
+  - README: `packages/nextjs/README.md`
+
+## 🎯 Choose Your Application
+
+### Angular Voice Form (`packages/web/`)
+- Traditional voice form with confirmation flow
+- Whisper.cpp for transcription
+- Structured form validation
+- Production-ready architecture
+
+**Start with:** `npm run dev:web`
+
+### Next.js Voice AI (`packages/nextjs/`)
+- Real-time voice conversation
+- Whisper.js + WebLLM + Text-to-Speech
+- No backend required (everything in browser)
+- Modern React stack
+
+**Start with:** `npm run dev:nextjs`
 
 ## 🔧 Next Steps
 
