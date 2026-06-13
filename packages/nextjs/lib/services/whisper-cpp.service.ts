@@ -4,11 +4,12 @@ const RUNTIME_URL = '/whisper/stream.js';
 const MODEL_URL = '/whisper/ggml-tiny.bin';
 const LANGUAGE = 'en';
 const WHISPER_SAMPLE_RATE = 16000;
+const BROWSER_SAMPLE_RATE = 48000;
 
 const MAX_BUFFER_SECONDS = 30;
 const POLL_INTERVAL_MS = 250;
-const SPEECH_RMS_THRESHOLD = 0.01;
-const SILENCE_FLUSH_SECONDS = 0.8;
+const SPEECH_RMS_THRESHOLD = 0.001; // Much lower threshold for 48kHz audio
+const SILENCE_FLUSH_SECONDS = 1.2;
 const MAX_UTTERANCE_SECONDS = 5;
 const LEAD_IN_SECONDS = 1;
 
@@ -119,25 +120,33 @@ export class WhisperCppService {
       return;
     }
 
-    // Buffer audio
-    const merged = new Float32Array(this.audio.length + chunk.length);
+    // Resample from 48kHz to 16kHz (take every 3rd sample)
+    const resampleRatio = BROWSER_SAMPLE_RATE / WHISPER_SAMPLE_RATE; // 48000/16000 = 3
+    const resampled = new Float32Array(Math.floor(chunk.length / resampleRatio));
+    for (let i = 0; i < resampled.length; i++) {
+      resampled[i] = chunk[Math.floor(i * resampleRatio)];
+    }
+
+    // Buffer resampled audio
+    const merged = new Float32Array(this.audio.length + resampled.length);
     merged.set(this.audio);
-    merged.set(chunk, this.audio.length);
+    merged.set(resampled, this.audio.length);
     const max = WHISPER_SAMPLE_RATE * MAX_BUFFER_SECONDS;
     this.audio = merged.length > max ? merged.slice(merged.length - max) : merged;
 
     // Voice activity detection with RMS
     let sum = 0;
-    for (let i = 0; i < chunk.length; i++) {
-      sum += chunk[i] * chunk[i];
+    for (let i = 0; i < resampled.length; i++) {
+      sum += resampled[i] * resampled[i];
     }
-    const rms = Math.sqrt(sum / chunk.length);
+    const rms = Math.sqrt(sum / resampled.length);
 
     if (rms > SPEECH_RMS_THRESHOLD) {
       this.hasSpeech = true;
       this.silenceSeconds = 0;
+      console.log(`[Whisper] Speech detected! RMS: ${rms.toFixed(5)}, buffered: ${(this.audio.length / WHISPER_SAMPLE_RATE).toFixed(1)}s`);
     } else {
-      this.silenceSeconds += chunk.length / WHISPER_SAMPLE_RATE;
+      this.silenceSeconds += resampled.length / WHISPER_SAMPLE_RATE;
     }
 
     // Send to Whisper when speech ends or buffer is full
@@ -147,6 +156,7 @@ export class WhisperCppService {
       (this.silenceSeconds >= SILENCE_FLUSH_SECONDS ||
         bufferedSeconds >= MAX_UTTERANCE_SECONDS)
     ) {
+      console.log(`[Whisper] Flushing audio to engine. Buffer: ${bufferedSeconds.toFixed(1)}s, silence: ${this.silenceSeconds.toFixed(1)}s`);
       this.module.set_audio(this.instanceId, this.audio);
       this.clearAudio();
     } else if (!this.hasSpeech && bufferedSeconds > LEAD_IN_SECONDS) {

@@ -276,122 +276,123 @@ export function VoiceChatOffline() {
   return (
     <FullScreenContainer>
       <div className="flex flex-col h-full bg-gradient-to-br from-slate-900 to-slate-800">
-      {/* Header */}
-      <div className="bg-slate-800 border-b border-slate-700 p-4 shadow-lg">
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-2xl font-bold text-white">Voice AI (Offline)</h1>
-          {engineReady && (
-            <button
-              onClick={toggleLoopMode}
-              className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${
-                loopMode
-                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                  : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-              }`}
-            >
-              {loopMode ? '🔄 Loop ON' : '⏸️ Loop OFF'}
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          {isInitializing ? (
-            <>
-              <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full" />
-              <span className="text-blue-400">{initProgress || 'Initializing...'}</span>
-            </>
-          ) : engineReady ? (
-            <>
-              <div className="h-2 w-2 bg-green-400 rounded-full" />
-              <span className="text-green-400">Ready (100% Offline)</span>
-              {loopMode && <span className="text-purple-400 ml-2">• Continuous mode active</span>}
-            </>
-          ) : (
-            <>
-              <div className="h-2 w-2 bg-yellow-400 rounded-full" />
-              <span className="text-yellow-400">Not initialized</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.length === 0 && !error && (
-          <div className="h-full flex items-center justify-center text-center">
-            <div className="text-slate-400">
-              <p className="text-lg mb-4">No messages yet</p>
-              <p className="text-sm max-w-xs">
-                Initialize the engine and click the microphone to start speaking
-              </p>
-            </div>
+        {/* Header */}
+        <div className="bg-slate-800 border-b border-slate-700 p-4 shadow-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-2xl font-bold text-white">Voice AI (Offline)</h1>
+            {engineReady && (
+              <button
+                onClick={toggleLoopMode}
+                className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${
+                  loopMode
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                    : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                }`}
+              >
+                {loopMode ? '🔄 Loop ON' : '⏸️ Loop OFF'}
+              </button>
+            )}
           </div>
-        )}
+          <div className="flex items-center gap-2 text-sm">
+            {isInitializing ? (
+              <>
+                <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full" />
+                <span className="text-blue-400">{initProgress || 'Initializing...'}</span>
+              </>
+            ) : engineReady ? (
+              <>
+                <div className="h-2 w-2 bg-green-400 rounded-full" />
+                <span className="text-green-400">Ready (100% Offline)</span>
+                {loopMode && <span className="text-purple-400 ml-2">• Continuous mode active</span>}
+              </>
+            ) : (
+              <>
+                <div className="h-2 w-2 bg-yellow-400 rounded-full" />
+                <span className="text-yellow-400">Not initialized</span>
+              </>
+            )}
+          </div>
+        </div>
 
-        {messages.map(message => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {messages.length === 0 && !error && (
+            <div className="h-full flex items-center justify-center text-center">
+              <div className="text-slate-400">
+                <p className="text-lg mb-4">No messages yet</p>
+                <p className="text-sm max-w-xs">
+                  Initialize the engine and click the microphone to start speaking
+                </p>
+              </div>
+            </div>
+          )}
+
+          {messages.map(message => (
             <div
-              className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
-                message.role === 'user'
-                  ? 'bg-blue-600 text-white rounded-br-none'
-                  : 'bg-slate-700 text-slate-100 rounded-bl-none'
-              }`}
+              key={message.id}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <p className="break-words">{message.content}</p>
-              <p className="text-xs mt-1 opacity-70">
-                {message.timestamp.toLocaleTimeString()}
-              </p>
+              <div
+                className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
+                  message.role === 'user'
+                    ? 'bg-blue-600 text-white rounded-br-none'
+                    : 'bg-slate-700 text-slate-100 rounded-bl-none'
+                }`}
+              >
+                <p className="break-words">{message.content}</p>
+                <p className="text-xs mt-1 opacity-70">
+                  {message.timestamp.toLocaleTimeString()}
+                </p>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
 
-        {error && (
-          <div className="bg-red-900 text-red-100 p-4 rounded-lg border border-red-700">
-            <p className="font-semibold">Error</p>
-            <p className="text-sm">{error}</p>
-          </div>
-        )}
+          {error && (
+            <div className="bg-red-900 text-red-100 p-4 rounded-lg border border-red-700">
+              <p className="font-semibold">Error</p>
+              <p className="text-sm">{error}</p>
+            </div>
+          )}
 
-        <div ref={messagesEndRef} />
-      </div>
+          <div ref={messagesEndRef} />
+        </div>
 
-      {/* Controls */}
-      <div className="bg-slate-800 border-t border-slate-700 p-4 space-y-4">
-        {!engineReady && !isInitializing && (
-          <button
-            onClick={initializeEngine}
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
-          >
-            Initialize Engine (Download 75MB Model)
-          </button>
-        )}
-
-        <ControlBar>
-          <button
-            onClick={handleStartListening}
-            disabled={isProcessing || isListening || !engineReady}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            <span className="text-xl">🎤</span>
-            {isListening ? 'Listening...' : isProcessing ? 'Processing...' : 'Start Listening'}
-          </button>
-
-          {messages.length > 0 && (
+        {/* Controls */}
+        <div className="bg-slate-800 border-t border-slate-700 p-4 space-y-4">
+          {!engineReady && !isInitializing && (
             <button
-              onClick={clearMessages}
-              disabled={isProcessing}
-              className="bg-slate-600 hover:bg-slate-700 disabled:bg-slate-800 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+              onClick={initializeEngine}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
             >
-              Clear
+              Initialize Engine (Download 75MB Model)
             </button>
           )}
-        </ControlBar>
 
-        <p className="text-xs text-slate-400 text-center">
-          ✅ 100% Offline • No API Keys • Web Speech API + WebLLM
-        </p>
+          <ControlBar>
+            <button
+              onClick={handleStartListening}
+              disabled={isProcessing || isListening || !engineReady}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <span className="text-xl">🎤</span>
+              {isListening ? 'Listening...' : isProcessing ? 'Processing...' : 'Start Listening'}
+            </button>
+
+            {messages.length > 0 && (
+              <button
+                onClick={clearMessages}
+                disabled={isProcessing}
+                className="bg-slate-600 hover:bg-slate-700 disabled:bg-slate-800 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </ControlBar>
+
+          <p className="text-xs text-slate-400 text-center">
+            ✅ 100% Offline • No API Keys • Web Speech API + WebLLM
+          </p>
+        </div>
       </div>
     </FullScreenContainer>
   );

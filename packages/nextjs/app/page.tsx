@@ -1,3 +1,5 @@
+'use client';
+
 import { ThemeProvider } from '@pipecat-ai/voice-ui-kit';
 import { VoiceChatOffline } from '@/components/VoiceChatOffline';
 

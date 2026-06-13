@@ -1,11 +1,12 @@
-{
+﻿{
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "voice-agent",
+      "name": "nextjs-voice",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["start"],
-      "port": 4200
+      "runtimeArgs": ["run", "dev", "-w", "packages/nextjs"],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }
