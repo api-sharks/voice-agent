@@ -18,6 +18,8 @@ export function VoiceChat() {
   const [initProgress, setInitProgress] = useState('');
   const [engineReady, setEngineReady] = useState(false);
   const [error, setError] = useState<string>('');
+  const [loopMode, setLoopMode] = useState(false);
+  const loopModeRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -75,6 +77,10 @@ export function VoiceChat() {
       if (!userText.trim()) {
         setError('No speech detected. Please try again.');
         setIsProcessing(false);
+        // Auto-restart in loop mode
+        if (loopModeRef.current) {
+          setTimeout(() => handleStartRecording(), 500);
+        }
         return;
       }
 
@@ -122,10 +128,22 @@ export function VoiceChat() {
 
       // Speak response
       await audioService.speakText(assistantText);
+
+      // Auto-restart in loop mode after speaking completes
+      if (loopModeRef.current) {
+        // Wait a bit for TTS to complete, then restart
+        setTimeout(() => {
+          handleStartRecording();
+        }, 500);
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(`Error: ${errorMsg}`);
       console.error(err);
+      // Auto-restart in loop mode even on error
+      if (loopModeRef.current) {
+        setTimeout(() => handleStartRecording(), 1000);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -136,16 +154,50 @@ export function VoiceChat() {
     setIsRecording(false);
   };
 
+  const toggleLoopMode = () => {
+    const newLoopMode = !loopMode;
+    setLoopMode(newLoopMode);
+    loopModeRef.current = newLoopMode;
+
+    if (newLoopMode && engineReady && !isRecording && !isProcessing) {
+      // Start recording if loop mode is enabled and we're idle
+      handleStartRecording();
+    } else if (!newLoopMode && isRecording) {
+      // Stop recording if loop mode is disabled
+      handleCancelRecording();
+    }
+  };
+
   const clearMessages = () => {
     setMessages([]);
     setError('');
   };
 
+  // Sync loopModeRef with state
+  useEffect(() => {
+    loopModeRef.current = loopMode;
+  }, [loopMode]);
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 to-slate-800">
       {/* Header */}
       <div className="bg-slate-800 border-b border-slate-700 p-4 shadow-lg">
-        <h1 className="text-2xl font-bold text-white mb-2">Voice AI Assistant</h1>
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-2xl font-bold text-white">Voice AI Assistant</h1>
+          {engineReady && (
+            <button
+              onClick={toggleLoopMode}
+              className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${
+                loopMode
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                  : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+              }`}
+              title={loopMode ? 'Continuous listening enabled' : 'Click to enable continuous listening'}
+            >
+              {loopMode ? '🔄 Loop ON' : '⏸️ Loop OFF'}
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2 text-sm">
           {isInitializing ? (
             <>
@@ -156,6 +208,7 @@ export function VoiceChat() {
             <>
               <div className="h-2 w-2 bg-green-400 rounded-full" />
               <span className="text-green-400">Ready</span>
+              {loopMode && <span className="text-purple-400 ml-2">• Continuous mode active</span>}
             </>
           ) : (
             <>

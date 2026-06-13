@@ -16,6 +16,8 @@ export function PipecatChat() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<string>('disconnected');
+  const [loopMode, setLoopMode] = useState(false);
+  const loopModeRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Connect to Pipecat backend on mount
@@ -66,9 +68,21 @@ export function PipecatChat() {
 
         // Speak the response
         audioService.speakText(message.text || '');
+
+        // Auto-restart in loop mode
+        if (loopModeRef.current) {
+          setTimeout(() => {
+            setIsRecording(false);
+            handleStartRecording();
+          }, 500);
+        }
       } else if (message.type === 'error') {
         console.error('Pipecat error:', message.error);
         setIsProcessing(false);
+        // Auto-restart in loop mode even on error
+        if (loopModeRef.current) {
+          setTimeout(() => handleStartRecording(), 1000);
+        }
       }
     });
 
@@ -116,9 +130,28 @@ export function PipecatChat() {
     audioService.cancelRecording();
   };
 
+  const toggleLoopMode = () => {
+    const newLoopMode = !loopMode;
+    setLoopMode(newLoopMode);
+    loopModeRef.current = newLoopMode;
+
+    if (newLoopMode && connectionStatus === 'connected' && !isRecording && !isProcessing) {
+      // Start recording if loop mode is enabled and we're idle
+      handleStartRecording();
+    } else if (!newLoopMode && isRecording) {
+      // Stop recording if loop mode is disabled
+      handleCancel();
+    }
+  };
+
   const handleClear = () => {
     setMessages([]);
   };
+
+  // Sync loopModeRef with state
+  useEffect(() => {
+    loopModeRef.current = loopMode;
+  }, [loopMode]);
 
   const handleInterrupt = () => {
     pipecatService.interrupt();
@@ -158,13 +191,29 @@ export function PipecatChat() {
     <div className="flex flex-col h-screen bg-slate-900 text-white">
       {/* Header */}
       <div className="bg-slate-800 border-b border-slate-700 px-6 py-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Pipecat Voice AI</h1>
-          <div className={`w-3 h-3 rounded-full ${getStatusColor()}`} />
-          <span className="text-sm text-slate-400">{getStatusText()}</span>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">Pipecat Voice AI</h1>
+            <div className={`w-3 h-3 rounded-full ${getStatusColor()}`} />
+            <span className="text-sm text-slate-400">{getStatusText()}</span>
+          </div>
+          {connectionStatus === 'connected' && (
+            <button
+              onClick={toggleLoopMode}
+              className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${
+                loopMode
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                  : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+              }`}
+              title={loopMode ? 'Continuous listening enabled' : 'Click to enable continuous listening'}
+            >
+              {loopMode ? '🔄 Loop ON' : '⏸️ Loop OFF'}
+            </button>
+          )}
         </div>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-sm text-slate-400">
           Backend-powered conversation with OpenAI + ElevenLabs
+          {loopMode && <span className="text-purple-400 ml-2">• Continuous mode active</span>}
         </p>
       </div>
 
