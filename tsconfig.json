@@ -21,7 +21,11 @@
       "ES2022",
       "dom"
     ],
-    "useDefineForClassFields": false
+    "useDefineForClassFields": false,
+    "paths": {
+      "shared": ["packages/shared/src/index.ts"],
+      "shared/*": ["packages/shared/src/*"]
+    }
   },
   "angularCompilerOptions": {
     "strictInjectionParameters": true,

@@ -2,12 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Monorepo Structure
+
+This is a **Turbo monorepo** with npm workspaces:
+
+- `packages/web` — Angular 17 web application
+- `packages/shared` — Shared services and utilities (for future service extraction)
+
+See [README-MONOREPO.md](./README-MONOREPO.md) for detailed setup.
+
 ## Commands
 
 ```bash
-npm install       # install dependencies
-npm start         # dev server at http://localhost:4200
-npm run build     # production build → dist/
+npm install              # install dependencies for all packages
+npm start                # dev server at http://localhost:4200
+npm run build            # production build → dist/
+npm run dev:web          # dev server for web package only
+npm run build:web        # build web package only
+turbo run build          # build all packages with caching
 ```
 
 No test runner is configured.

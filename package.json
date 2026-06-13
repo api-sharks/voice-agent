@@ -1,26 +1,21 @@
 {
-  "name": "voice-ai-form-advanced",
+  "name": "voice-agent-monorepo",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "npm@10.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "start": "ng serve",
-    "build": "ng build"
-  },
-  "dependencies": {
-    "@angular/common": "^17.3.12",
-    "@angular/compiler": "^17.3.12",
-    "@angular/core": "^17.3.12",
-    "@angular/forms": "^17.3.12",
-    "@angular/platform-browser": "^17.3.12",
-    "rxjs": "^7.8.1",
-    "tslib": "^2.6.2",
-    "zone.js": "^0.14.10"
+    "start": "npm --workspace=web run start",
+    "dev": "npm --workspace=web run dev",
+    "build": "npm --workspace=web run build",
+    "dev:web": "npm --workspace=web run dev",
+    "build:web": "npm --workspace=web run build",
+    "build:shared": "npm --workspace=shared run build",
+    "turbo:build": "turbo run build"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^17.3.10",
-    "@angular/cli": "^17.3.10",
-    "@angular/compiler-cli": "^17.3.12",
-    "@types/node": "^20.12.12",
-    "typescript": "^5.4.5"
+    "turbo": "^2.9.18"
   }
 }
