@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { whisperCppService } from '@/lib/services/whisper-cpp.service';
+import {
+  FullScreenContainer,
+  ControlBar,
+  SpinLoader,
+  ErrorCard,
+} from '@pipecat-ai/voice-ui-kit';
+import { webSpeechService } from '@/lib/services/web-speech.service';
 import { webllmService, audioService, type LLMMessage } from '@/lib/services';
 
 interface Message {
@@ -21,8 +27,6 @@ export function VoiceChatOffline() {
   const [loopMode, setLoopMode] = useState(false);
   const [error, setError] = useState<string>('');
   const loopModeRef = useRef(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<ScriptProcessorNode | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -72,54 +76,79 @@ export function VoiceChatOffline() {
     setIsListening(true);
 
     try {
-      console.log('Requesting microphone access...');
+      console.log('Starting speech recognition...');
 
-      // Get microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      if (!webSpeechService.isSupported()) {
+        setError('Speech recognition not supported in your browser');
+        setIsListening(false);
+        return;
+      }
 
-      console.log('Microphone access granted. Stream tracks:', stream.getTracks().length);
+      // Use Web Speech API for transcription (built-in, no models needed)
+      const userText = await webSpeechService.transcribe();
 
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      console.log('Audio context created. Sample rate:', audioContext.sampleRate);
-      audioContextRef.current = audioContext;
+      console.log('Speech recognized:', userText);
 
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      analyserRef.current = processor;
-
-      let audioChunkCount = 0;
-      processor.onaudioprocess = (event) => {
-        const inputData = event.inputBuffer.getChannelData(0);
-        audioChunkCount++;
-        if (audioChunkCount % 10 === 0) {
-          console.log(`Audio chunk ${audioChunkCount}, input buffer size: ${inputData.length}`);
+      if (!userText.trim()) {
+        setError('No speech detected. Please try again.');
+        setIsListening(false);
+        if (loopModeRef.current) {
+          setTimeout(() => handleStartListening(), 500);
         }
-        // Process audio at original sample rate (usually 48kHz)
-        // Whisper.cpp handles resampling internally
-        whisperCppService.process(new Float32Array(inputData));
+        return;
+      }
+
+      // Add user message
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: userText,
+        timestamp: new Date(),
       };
+      setMessages(prev => [...prev, userMessage]);
+      setIsListening(false);
+      setIsProcessing(true);
 
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      // Generate response
+      const llmMessages: LLMMessage[] = [
+        {
+          role: 'system',
+          content: 'You are a helpful voice assistant. Keep responses concise and natural for voice interaction.',
+        },
+        ...messages.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+        {
+          role: 'user',
+          content: userText,
+        },
+      ];
 
-      console.log('Audio processing pipeline connected. Listening...');
+      const assistantText = await webllmService.generateResponse(llmMessages);
 
-      // Stop listening after 30 seconds
-      setTimeout(() => {
-        console.log('30s timeout reached, stopping listening');
-        handleStopListening();
-      }, 30000);
+      const assistantMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: assistantText,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+
+      // Speak response
+      await audioService.speakText(assistantText);
+      setIsProcessing(false);
+
+      // Auto-restart in loop mode
+      if (loopModeRef.current) {
+        setTimeout(() => handleStartListening(), 500);
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      console.error('Microphone access error:', err);
-      setError(`Failed to access microphone: ${errorMsg}`);
+      console.error('Speech recognition error:', err);
+      setError(`Failed: ${errorMsg}`);
       setIsListening(false);
+      setIsProcessing(false);
     }
   };
 
@@ -221,8 +250,32 @@ export function VoiceChatOffline() {
     setError('');
   };
 
+  if (isInitializing) {
+    return (
+      <FullScreenContainer>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <SpinLoader />
+            <p className="text-sm text-slate-400 mt-4">{initProgress || 'Initializing...'}</p>
+          </div>
+        </div>
+      </FullScreenContainer>
+    );
+  }
+
+  if (error && !engineReady) {
+    return (
+      <FullScreenContainer>
+        <div className="flex items-center justify-center h-full">
+          <ErrorCard error={error} />
+        </div>
+      </FullScreenContainer>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+    <FullScreenContainer>
+      <div className="flex flex-col h-full bg-gradient-to-br from-slate-900 to-slate-800">
       {/* Header */}
       <div className="bg-slate-800 border-b border-slate-700 p-4 shadow-lg">
         <div className="flex items-center justify-between mb-2">
@@ -315,28 +368,15 @@ export function VoiceChatOffline() {
           </button>
         )}
 
-        <div className="flex gap-3">
-          {isListening ? (
-            <>
-              <button
-                onClick={handleStopListening}
-                disabled={isProcessing}
-                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-800 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-              >
-                <div className="h-3 w-3 bg-white rounded-full animate-pulse" />
-                Stop Listening
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleStartListening}
-              disabled={isProcessing || !engineReady}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              <span className="text-xl">🎤</span>
-              {isProcessing ? 'Processing...' : 'Start Listening'}
-            </button>
-          )}
+        <ControlBar>
+          <button
+            onClick={handleStartListening}
+            disabled={isProcessing || isListening || !engineReady}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="text-xl">🎤</span>
+            {isListening ? 'Listening...' : isProcessing ? 'Processing...' : 'Start Listening'}
+          </button>
 
           {messages.length > 0 && (
             <button
@@ -347,12 +387,12 @@ export function VoiceChatOffline() {
               Clear
             </button>
           )}
-        </div>
+        </ControlBar>
 
         <p className="text-xs text-slate-400 text-center">
-          ✅ 100% Offline • No API Keys • Whisper.cpp Tiny Model (16kHz, RMS-based VAD)
+          ✅ 100% Offline • No API Keys • Web Speech API + WebLLM
         </p>
       </div>
-    </div>
+    </FullScreenContainer>
   );
 }

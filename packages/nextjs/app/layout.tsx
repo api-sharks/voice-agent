@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import "@pipecat-ai/voice-ui-kit/styles";
 import "./globals.css";
 
 const geistSans = Geist({
