@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { whisperService, webllmService, audioService, type LLMMessage } from '@/lib/services';
+import { webSpeechService } from '@/lib/services/web-speech.service';
+import { webllmService, audioService, type LLMMessage } from '@/lib/services';
 
 interface Message {
   id: string;
@@ -53,26 +54,16 @@ export function VoiceChat() {
   const handleStartRecording = async () => {
     setError('');
 
-    try {
-      await audioService.startRecording();
-      setIsRecording(true);
-    } catch (err) {
-      setError(`Failed to start recording: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    if (!webSpeechService.isSupported()) {
+      setError('Speech Recognition not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
     }
-  };
-
-  const handleStopRecording = async () => {
-    if (!isRecording) return;
-
-    setIsRecording(false);
-    setIsProcessing(true);
-    setError('');
 
     try {
-      const audioBlob = await audioService.stopRecording();
+      setIsRecording(true);
 
-      // Transcribe audio
-      const userText = await whisperService.transcribe(audioBlob);
+      // Use Web Speech API for offline speech recognition
+      const userText = await webSpeechService.transcribe();
 
       if (!userText.trim()) {
         setError('No speech detected. Please try again.');
