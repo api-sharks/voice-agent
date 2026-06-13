@@ -56,11 +56,6 @@ export function VoiceChatOffline() {
         }
       );
 
-      // Initialize Whisper.cpp
-      await whisperCppService.initialize(
-        (status) => setInitProgress(status)
-      );
-
       setEngineReady(true);
     } catch (err) {
       setError(`Failed to initialize: ${err instanceof Error ? err.message : 'Unknown error'}`);
