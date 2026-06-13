@@ -72,30 +72,53 @@ export function VoiceChatOffline() {
     setIsListening(true);
 
     try {
+      console.log('Requesting microphone access...');
+
       // Get microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      console.log('Microphone access granted. Stream tracks:', stream.getTracks().length);
+
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      console.log('Audio context created. Sample rate:', audioContext.sampleRate);
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       analyserRef.current = processor;
 
+      let audioChunkCount = 0;
       processor.onaudioprocess = (event) => {
         const inputData = event.inputBuffer.getChannelData(0);
-        // Resample to 16kHz if needed
+        audioChunkCount++;
+        if (audioChunkCount % 10 === 0) {
+          console.log(`Audio chunk ${audioChunkCount}, input buffer size: ${inputData.length}`);
+        }
+        // Process audio at original sample rate (usually 48kHz)
+        // Whisper.cpp handles resampling internally
         whisperCppService.process(new Float32Array(inputData));
       };
 
       source.connect(processor);
       processor.connect(audioContext.destination);
 
+      console.log('Audio processing pipeline connected. Listening...');
+
       // Stop listening after 30 seconds
       setTimeout(() => {
+        console.log('30s timeout reached, stopping listening');
         handleStopListening();
       }, 30000);
     } catch (err) {
-      setError(`Failed to access microphone: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Microphone access error:', err);
+      setError(`Failed to access microphone: ${errorMsg}`);
       setIsListening(false);
     }
   };
