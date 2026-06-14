@@ -134,12 +134,12 @@ export function VoiceChatDuplex() {
       unsubscribesRef.current = [unsubscribePartial];
 
       if (!userText.trim()) {
-        setError('No speech detected. Please try again.');
+        setError('No speech detected. Make sure: 1) Microphone is enabled, 2) Browser has microphone permission, 3) Speak clearly and loudly. Try again.');
         setIsListening(false);
         setPartialTranscript('');
         duplexAudioService.cancelRecording();
         if (loopModeRef.current) {
-          setTimeout(() => handleStartListening(), 500);
+          setTimeout(() => handleStartListening(), 1000);
         }
         return;
       }
@@ -260,7 +260,18 @@ export function VoiceChatDuplex() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       console.error('Duplex error:', err);
-      setError(`Failed: ${errorMsg}`);
+
+      // Provide specific guidance based on error type
+      let userError = errorMsg;
+      if (errorMsg.includes('No speech detected')) {
+        userError = 'No speech detected. Check: Microphone enabled? Browser permissions granted? Try speaking louder and clearer.';
+      } else if (errorMsg.includes('not supported')) {
+        userError = 'Speech Recognition not supported in your browser. Please use Chrome, Edge, or Safari.';
+      } else if (errorMsg.includes('timeout')) {
+        userError = 'Recognition timeout. Check your internet and try again.';
+      }
+
+      setError(`Failed: ${userError}`);
       setIsListening(false);
       setIsProcessing(false);
       setPartialTranscript('');

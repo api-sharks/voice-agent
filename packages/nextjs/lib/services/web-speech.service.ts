@@ -142,7 +142,7 @@ export class WebSpeechService {
         return;
       }
 
-      // Timeout after 12 seconds
+      // Timeout after 12 seconds of inactivity
       timeoutId = setTimeout(() => {
         if (hasResolved) return;
         hasResolved = true;
@@ -152,13 +152,17 @@ export class WebSpeechService {
         } catch (e) {
           // Already stopped
         }
-        // Check if we actually got some transcript before rejecting
-        if (this.transcript.trim()) {
-          console.log('[WebSpeech] Timeout but got transcript:', this.transcript);
-          resolve(this.transcript.trim());
+
+        // Check if we got any transcript
+        const finalTranscript = this.transcript.trim();
+        if (finalTranscript) {
+          console.log('[WebSpeech] Timeout but got transcript:', finalTranscript);
+          resolve(finalTranscript);
         } else {
-          console.log('[WebSpeech] Timeout with no transcript');
-          reject(new Error('No speech detected. Please speak clearly and try again.'));
+          // No speech was captured in 12 seconds
+          console.warn('[WebSpeech] Timeout - No speech detected after 12 seconds');
+          console.warn('[WebSpeech] Troubleshooting: Check microphone permissions, volume, and speak clearly');
+          reject(new Error('No speech detected. Please check microphone permissions and try again.'));
         }
       }, 12000);
     });
