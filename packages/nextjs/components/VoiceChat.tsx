@@ -140,7 +140,14 @@ export function VoiceChat() {
     }
   };
 
+  const handleStopRecording = () => {
+    webSpeechService.stopListening();
+    setIsRecording(false);
+    setIsProcessing(true);
+  };
+
   const handleCancelRecording = () => {
+    webSpeechService.abort();
     audioService.cancelRecording();
     setIsRecording(false);
   };
@@ -168,6 +175,28 @@ export function VoiceChat() {
   useEffect(() => {
     loopModeRef.current = loopMode;
   }, [loopMode]);
+
+  // Set up error listener for WebSpeechService
+  useEffect(() => {
+    const unsubscribe = webSpeechService.onError((error) => {
+      if (error === 'no-speech') {
+        setError('No speech detected. Please speak clearly and try again.');
+      } else if (error === 'audio-capture') {
+        setError('Microphone error: Please check your microphone permissions and try again.');
+      } else if (error === 'network') {
+        setError('Network error: Please check your internet connection.');
+      } else {
+        setError(`Speech recognition error: ${error}`);
+      }
+      setIsRecording(false);
+      // Auto-restart in loop mode
+      if (loopModeRef.current) {
+        setTimeout(() => handleStartRecording(), 1000);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 to-slate-800">

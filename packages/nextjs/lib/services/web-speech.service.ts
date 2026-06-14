@@ -6,6 +6,7 @@ export class WebSpeechService {
   private isListening = false;
   private transcript = '';
   private listeners: ((text: string) => void)[] = [];
+  private errorListeners: ((error: string) => void)[] = [];
 
   private constructor() {
     // Initialize Web Speech API
@@ -32,8 +33,9 @@ export class WebSpeechService {
 
     // Set language to English
     this.recognition.lang = 'en-US';
-    this.recognition.continuous = false;
+    this.recognition.continuous = true;
     this.recognition.interimResults = true;
+    this.recognition.maxAlternatives = 1;
 
     this.recognition.onstart = () => {
       console.log('Web Speech Recognition started');
@@ -60,7 +62,26 @@ export class WebSpeechService {
     };
 
     this.recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
+      const error = event.error;
+      console.error('Speech recognition error:', error);
+
+      // Handle specific error cases
+      switch (error) {
+        case 'no-speech':
+          console.warn('No speech detected. Make sure your microphone is working and you are speaking clearly.');
+          break;
+        case 'audio-capture':
+          console.error('No microphone found or microphone permission denied.');
+          break;
+        case 'network':
+          console.error('Network error occurred during speech recognition.');
+          break;
+        default:
+          console.error(`Speech recognition error: ${error}`);
+      }
+
+      // Notify error listeners
+      this.errorListeners.forEach(listener => listener(error));
     };
 
     this.recognition.onend = () => {
@@ -84,28 +105,53 @@ export class WebSpeechService {
       this.transcript = '';
       let hasResolved = false;
       let timeoutId: NodeJS.Timeout | null = null;
+      let errorHandler: ((error: string) => void) | null = null;
 
       const listener = (text: string) => {
         if (hasResolved) return;
         hasResolved = true;
         if (timeoutId) clearTimeout(timeoutId);
+        if (errorHandler) {
+          this.errorListeners = this.errorListeners.filter(l => l !== errorHandler);
+        }
         this.listeners = this.listeners.filter(l => l !== listener);
         resolve(text);
       };
 
+      errorHandler = (error: string) => {
+        if (hasResolved) return;
+        if (error === 'no-speech') {
+          hasResolved = true;
+          if (timeoutId) clearTimeout(timeoutId);
+          this.errorListeners = this.errorListeners.filter(l => l !== errorHandler);
+          this.listeners = this.listeners.filter(l => l !== listener);
+          try {
+            this.recognition.stop();
+          } catch (e) {
+            // Already stopped
+          }
+          reject(new Error('No speech detected. Please speak clearly and try again.'));
+        }
+      };
+
       this.listeners.push(listener);
+      this.errorListeners.push(errorHandler);
 
       try {
         this.recognition.start();
       } catch (error) {
         // Already listening or error starting
         console.warn('Recognition error:', error);
+        reject(error);
       }
 
-      // Timeout after 60 seconds (Web Speech API can take time)
+      // Timeout after 15 seconds (Web Speech API typically handles its own timeout)
       timeoutId = setTimeout(() => {
         if (hasResolved) return;
         hasResolved = true;
+        if (errorHandler) {
+          this.errorListeners = this.errorListeners.filter(l => l !== errorHandler);
+        }
         this.listeners = this.listeners.filter(l => l !== listener);
         try {
           this.recognition.stop();
@@ -113,7 +159,7 @@ export class WebSpeechService {
           // Already stopped
         }
         reject(new Error('Speech recognition timeout - please try again'));
-      }, 60000);
+      }, 15000);
 
       // Clear timeout when we get a result
       const originalListener = this.listeners[this.listeners.length - 1];
@@ -173,6 +219,13 @@ export class WebSpeechService {
   setLanguage(lang: string): void {
     if (!this.recognition) return;
     this.recognition.lang = lang;
+  }
+
+  onError(listener: (error: string) => void): () => void {
+    this.errorListeners.push(listener);
+    return () => {
+      this.errorListeners = this.errorListeners.filter(l => l !== listener);
+    };
   }
 }
 

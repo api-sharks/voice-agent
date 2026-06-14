@@ -41,6 +41,28 @@ export function VoiceChatOffline() {
     loopModeRef.current = loopMode;
   }, [loopMode]);
 
+  // Set up error listener for WebSpeechService
+  useEffect(() => {
+    const unsubscribe = webSpeechService.onError((error) => {
+      if (error === 'no-speech') {
+        setError('No speech detected. Please speak clearly and try again.');
+      } else if (error === 'audio-capture') {
+        setError('Microphone error: Please check your microphone permissions and try again.');
+      } else if (error === 'network') {
+        setError('Network error: Please check your internet connection.');
+      } else {
+        setError(`Speech recognition error: ${error}`);
+      }
+      setIsListening(false);
+      // Auto-restart in loop mode
+      if (loopModeRef.current) {
+        setTimeout(() => handleStartListening(), 1000);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const initializeEngine = async () => {
     if (engineReady) return;
 
