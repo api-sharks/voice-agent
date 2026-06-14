@@ -143,52 +143,17 @@ export function VoiceChatDuplex() {
       // Start duplex audio recording
       await duplexAudioService.startRecording();
 
-      // Set up streaming transcription listeners
+      // Wait for speech to be transcribed
+      const userText = await webSpeechService.transcribe();
+
+      // Get partial transcripts for display
       const unsubscribePartial = webSpeechService.onPartialResult((partial) => {
         partialTranscriptRef.current = partial;
         setPartialTranscript(partial);
         console.log('[Streaming] Partial:', partial);
       });
 
-      let finalUserText = '';
-      const unsubscribeFinal = webSpeechService.onFinalResult((final) => {
-        finalUserText += final + ' ';
-        console.log('[Streaming] Final:', final);
-      });
-
-      unsubscribesRef.current = [unsubscribePartial, unsubscribeFinal];
-
-      // Start streaming transcription (non-blocking)
-      await webSpeechService.startStreaming();
-
-      // Wait for user to start speaking (or timeout after 30s if idle)
-      let waitTimeout: NodeJS.Timeout | null = null;
-      const waitForSpeech = new Promise<string>((resolve) => {
-        waitTimeout = setTimeout(() => {
-          if (!finalUserText.trim()) {
-            console.log('[Streaming] Timeout - no speech detected');
-            resolve('');
-          }
-        }, 30000);
-
-        // Continue waiting until user finishes speaking (based on VAD)
-        const checkSpeech = setInterval(() => {
-          if (!streamingActiveRef.current) {
-            clearInterval(checkSpeech);
-            if (waitTimeout) clearTimeout(waitTimeout);
-            resolve(finalUserText.trim());
-          }
-        }, 100);
-      });
-
-      const userText = await waitForSpeech;
-
-      // Clean up listeners
-      unsubscribesRef.current.forEach(unsub => unsub());
-      unsubscribesRef.current = [];
-
-      // Stop streaming transcription
-      await webSpeechService.stopStreaming();
+      unsubscribesRef.current = [unsubscribePartial];
 
       if (!userText.trim()) {
         setError('No speech detected. Please try again.');
@@ -228,33 +193,24 @@ export function VoiceChatDuplex() {
         },
       ];
 
-      // Stream response tokens and speak as they arrive
-      let fullResponse = '';
+      // Generate response from LLM
       setBotSpeakingStatus(true);
-
-      const unsubscribeError = webSpeechService.onError((error) => {
-        if (error === 'no-speech') {
-          streamingActiveRef.current = false;
-        }
-      });
+      let fullResponse = '';
 
       try {
-        await webllmService.streamResponse(
-          llmMessages,
-          (token) => {
-            fullResponse += token;
-            // Start speaking immediately when we have enough tokens
-            // This enables true duplex - bot speaking while processing
-            if (fullResponse.length > 0) {
-              console.log('[Streaming] Token:', token);
-            }
-          }
-        );
+        console.log('[Duplex] Generating response...');
+        fullResponse = await webllmService.generateResponse(llmMessages);
+        console.log('[Duplex] Response generated:', fullResponse);
 
-        // Speak the accumulated response
-        await duplexAudioService.speakText(fullResponse);
+        if (fullResponse.trim()) {
+          console.log('[Duplex] Speaking response...');
+          await duplexAudioService.speakText(fullResponse);
+          console.log('[Duplex] Response spoken');
+        }
+      } catch (err) {
+        console.error('[Duplex] LLM error:', err);
+        setError(`LLM Error: ${err instanceof Error ? err.message : 'Unknown'}`);
       } finally {
-        unsubscribeError();
         setBotSpeakingStatus(false);
       }
 
