@@ -82,8 +82,13 @@ export class WebSpeechService {
 
     return new Promise((resolve, reject) => {
       this.transcript = '';
+      let hasResolved = false;
+      let timeoutId: NodeJS.Timeout | null = null;
 
       const listener = (text: string) => {
+        if (hasResolved) return;
+        hasResolved = true;
+        if (timeoutId) clearTimeout(timeoutId);
         this.listeners = this.listeners.filter(l => l !== listener);
         resolve(text);
       };
@@ -93,23 +98,34 @@ export class WebSpeechService {
       try {
         this.recognition.start();
       } catch (error) {
-        // Already listening
-        console.warn('Recognition already in progress');
+        // Already listening or error starting
+        console.warn('Recognition error:', error);
       }
 
-      // Timeout after 30 seconds
-      const timeout = setTimeout(() => {
+      // Timeout after 60 seconds (Web Speech API can take time)
+      timeoutId = setTimeout(() => {
+        if (hasResolved) return;
+        hasResolved = true;
         this.listeners = this.listeners.filter(l => l !== listener);
-        this.recognition.stop();
-        reject(new Error('Speech recognition timeout'));
-      }, 30000);
+        try {
+          this.recognition.stop();
+        } catch (e) {
+          // Already stopped
+        }
+        reject(new Error('Speech recognition timeout - please try again'));
+      }, 60000);
 
       // Clear timeout when we get a result
       const originalListener = this.listeners[this.listeners.length - 1];
-      this.listeners[this.listeners.length - 1] = (text: string) => {
-        clearTimeout(timeout);
-        originalListener(text);
-      };
+      if (originalListener) {
+        this.listeners[this.listeners.length - 1] = (text: string) => {
+          if (!hasResolved) {
+            hasResolved = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            originalListener(text);
+          }
+        };
+      }
     });
   }
 
