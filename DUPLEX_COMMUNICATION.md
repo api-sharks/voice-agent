@@ -1,278 +1,235 @@
-# Duplex Communication Improvements
+# Duplex Communication: Barge-in Implementation
 
-This document describes the enhanced bidirectional (duplex) communication features implemented in the Voice AI application.
+This document describes how the Voice AI application implements duplex communication, enabling users to interrupt the bot while it's speaking (barge-in).
 
 ## Overview
 
-Duplex communication enables simultaneous audio input and output, allowing users to interrupt the bot while it's speaking (barge-in), with automatic echo cancellation and improved voice activity detection.
-
-## Features
-
-### 1. **Barge-in Detection**
-
-Users can interrupt the bot while it's speaking. The system detects when user speech starts while the bot is playing audio.
-
-- **How it works:**
-  - Monitors microphone input while TTS is active
-  - Detects sudden increase in audio energy (RMS > threshold)
-  - Stops bot speech immediately and restarts listening
-
-- **Configuration:**
-  ```typescript
-  const config: DuplexAudioConfig = {
-    bargeInThreshold: 0.02, // RMS threshold for barge-in
-  };
-  ```
-
-### 2. **Echo Cancellation**
-
-Browser's built-in echo cancellation removes feedback when user speaks over bot audio.
-
-- **How it works:**
-  - Enabled via `getUserMedia` constraints: `echoCancellation: true`
-  - Filters bot audio from microphone input
-  - Combined with noise suppression for cleaner audio
-
-- **Configuration:**
-  ```typescript
-  const config: DuplexAudioConfig = {
-    enableEchoCancellation: true,
-    enableNoiseSuppression: true,
-    enableAutoGainControl: true,
-  };
-  ```
-
-### 3. **Real-time Audio Streaming**
-
-Continuous monitoring of audio input for voice activity and barge-in detection.
-
-- **How it works:**
-  - Web Audio API `AnalyserNode` for frequency analysis
-  - 50ms interval checks for audio activity
-  - No latency - immediate response to user speech
-
-### 4. **Enhanced Voice Activity Detection (VAD)**
-
-Improved speech detection using energy-based analysis with confidence scoring.
-
-- **How it works:**
-  - Calculates RMS (Root Mean Square) energy from audio
-  - Compares against configurable threshold
-  - Tracks minimum speech duration and silence duration
-  - Returns confidence level (0-1)
-
-- **Configuration:**
-  ```typescript
-  const vadConfig: VADConfig = {
-    threshold: 0.02,           // Energy threshold
-    minSpeechDuration: 200,    // Min speech length (ms)
-    minSilenceDuration: 500,   // Min silence length (ms)
-  };
-  ```
-
-### 5. **Overlapping Speech Handling**
-
-System detects when user speaks while bot is speaking and handles it gracefully.
-
-- **How it works:**
-  - VAD tracks user speaking status continuously
-  - Barge-in detector alerts when overlap occurs
-  - Bot speech is stopped, clearing way for user input
-  - Next turn begins without repetition
+The application supports simultaneous audio input and output, allowing natural conversation with the ability to interrupt. When the bot is speaking (via Web Speech API), the system monitors the microphone and detects when the user speaks loudly enough to interrupt, immediately stopping the bot's speech and processing the user's input.
 
 ## Architecture
 
 ### Services
 
-#### `DuplexAudioService`
-- Handles recording, playback, and real-time monitoring
-- Manages barge-in events
-- Provides echo cancellation support
+#### `MicService` ([mic.service.ts](packages/web/src/app/core/services/mic.service.ts))
+Manages microphone input via the Web Audio API.
+
+- Captures audio at 16kHz mono (Whisper's expected sample rate)
+- Enables **echo cancellation** via `getUserMedia` constraints to filter out bot audio
+- Also enables **noise suppression** and **auto gain control** for cleaner input
+- Calls a callback on each audio chunk (4096 samples ≈ 256ms at 16kHz)
 
 ```typescript
-import { duplexAudioService, type BargeInEvent } from '@/lib/services';
-
-// Register for barge-in events
-const unsubscribe = duplexAudioService.onBargeIn((event: BargeInEvent) => {
-  console.log('Barge-in detected at RMS:', event.rms);
-  duplexAudioService.stopSpeaking();
-});
+async start(callback: (data: Float32Array) => void): Promise<void> {
+  this.stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,  // Filter bot audio from mic
+      noiseSuppression: true,
+      autoGainControl: true
+    }
+  });
+  // ... setup Web Audio API ...
+  this.processor.onaudioprocess = (event) => {
+    const input = event.inputBuffer.getChannelData(0);
+    callback(new Float32Array(input));
+  };
+}
 ```
 
-#### `VADService`
-- Real-time voice activity detection
-- Energy-based analysis with confidence scoring
-- Configurable thresholds
+#### `TtsService` ([tts.service.ts](packages/web/src/app/core/services/tts.service.ts))
+Wraps the Web Speech API for text-to-speech.
+
+- `speak(text)` — Start speaking
+- `stop()` — Cancel speech immediately (used for barge-in)
+- `speaking` getter — Check if audio is currently playing
+
+#### `WhisperService` ([whisper.service.ts](packages/web/src/app/core/services/whisper.service.ts))
+Converts audio chunks to text using Whisper.cpp WASM.
+
+- Buffers audio and uses RMS-based voice activity detection
+- Emits `utterance$` when a complete utterance is detected
+- Processes incoming audio chunks one at a time
+
+#### `AgentService` ([agent.service.ts](packages/web/src/app/core/services/agent.service.ts))
+Conversational state machine for form collection.
+
+- Asks for confirmation on each captured field
+- Reads back values and accepts corrections
+- Tracks state: asking → confirming → summary → completed
+
+### Component Logic
+
+#### `VoiceFormComponent` ([voice-form.component.ts](packages/web/src/app/features/voice-form/voice-form.component.ts))
+Orchestrates the entire voice flow, including barge-in detection.
+
+**Barge-in Detection:**
 
 ```typescript
-import { vadService, type VADEvent } from '@/lib/services';
+const BARGE_IN_RMS = 0.04;      // RMS energy threshold
+const BARGE_IN_CHUNKS = 2;      // ~0.5s at 16kHz
 
-// Listen for VAD state changes
-const unsubscribe = vadService.onVADChange((event: VADEvent) => {
-  console.log('User speaking:', event.isSpeaking);
-  console.log('Confidence:', event.confidence);
-});
-```
-
-## Components
-
-### `VoiceChatDuplex`
-Enhanced voice chat component with duplex features.
-
-- Visual indicators for:
-  - Bot speaking (blue pulse)
-  - User speaking (amber pulse)
-  - Barge-in detected (orange bounce)
-  
-- Real-time status updates in header
-
-## Usage
-
-### Enable Duplex Features
-
-```typescript
-// 1. Import duplex service
-import { duplexAudioService } from '@/lib/services';
-
-// 2. Start recording with duplex support
-await duplexAudioService.startRecording();
-
-// 3. Register for barge-in events
-duplexAudioService.onBargeIn((event) => {
-  if (event.detected) {
-    // Stop bot speech on interrupt
-    duplexAudioService.stopSpeaking();
+private onAudioChunk(audio: Float32Array): void {
+  if (!this.tts.speaking) {
+    // Bot not talking: transcribe normally
+    this.bargeInChunks = [];
+    this.whisper.process(audio);
+    return;
   }
-});
 
-// 4. Speak text with barge-in support
-await duplexAudioService.speakText('Hello user!');
+  // Bot is talking: listen for interruption
+  if (this.rms(audio) > BARGE_IN_RMS) {
+    // User is loud enough to interrupt
+    this.bargeInChunks.push(audio);
+    if (this.bargeInChunks.length >= BARGE_IN_CHUNKS) {
+      // Sustained loud audio detected: stop bot
+      this.tts.stop();
+      // Send buffered chunks to Whisper
+      for (const chunk of this.bargeInChunks) {
+        this.whisper.process(chunk);
+      }
+      this.bargeInChunks = [];
+    }
+  } else {
+    // Sound level dropped: reset buffer
+    this.bargeInChunks = [];
+  }
+}
 
-// 5. Stop recording
-await duplexAudioService.stopRecording();
+private rms(audio: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < audio.length; i++) {
+    sum += audio[i] * audio[i];
+  }
+  return Math.sqrt(sum / audio.length);
+}
 ```
 
-### Configure VAD
+## How Barge-in Works
+
+1. **User speaks while bot is speaking**
+   - Mic captures audio chunks continuously
+   - RMS energy is calculated for each chunk
+
+2. **Energy threshold met**
+   - If RMS > 0.04, the chunk is buffered
+   - Detection requires 2 consecutive loud chunks (~0.5s sustained speech)
+
+3. **Barge-in triggered**
+   - `tts.stop()` cancels the bot's speech immediately
+   - Buffered chunks are sent to Whisper for transcription
+   - Barge-in buffer is cleared
+
+4. **Next turn**
+   - User's speech is transcribed
+   - Agent processes the interruption (usually a correction or "stop")
+   - Flow continues normally
+
+## Key Features
+
+### Echo Cancellation
+The browser's native echo cancellation (via `getUserMedia` constraints) filters most bot audio from the mic signal. This is why the barge-in threshold is higher (0.04) than Whisper's silence threshold (typically 0.02) — the bot's voice has been mostly removed by echo cancellation, so only the user's speech remains loud.
+
+### Multi-stage Detection
+Barge-in requires **sustained** speech (2+ chunks) to avoid false positives from noise or artifacts. A single loud chunk doesn't trigger it.
+
+### Graceful Degradation
+- If the browser doesn't support `echoCancellation`, the feature still works but sensitivity will vary
+- Users with loud speakers or quiet microphones may need volume adjustment
+- Web Speech API timeout is configured (recent improvements increased from 5s default)
+
+## Configuration
+
+To adjust barge-in sensitivity:
+
+| Parameter | Value | Effect |
+|-----------|-------|--------|
+| `BARGE_IN_RMS` | 0.04 | Energy threshold (higher = harder to trigger) |
+| `BARGE_IN_CHUNKS` | 2 | Sustain duration in chunks; 1 chunk ≈ 256ms at 16kHz |
+
+Example adjustments:
 
 ```typescript
-import { VADService } from '@/lib/services';
+// More sensitive (easier to interrupt)
+const BARGE_IN_RMS = 0.02;      // Lower threshold
+const BARGE_IN_CHUNKS = 1;      // Faster detection (256ms)
 
-const vad = new VADService({
-  threshold: 0.03,              // Higher = less sensitive
-  minSpeechDuration: 300,       // Wait 300ms before confirming speech
-  minSilenceDuration: 800,      // Wait 800ms before confirming silence
-});
+// Less sensitive (require louder/longer speech)
+const BARGE_IN_RMS = 0.06;      // Higher threshold
+const BARGE_IN_CHUNKS = 4;      // Longer sustain (1s)
 ```
-
-## Performance Metrics
-
-### Latency
-- **Barge-in detection:** ~50ms (50ms check interval)
-- **VAD response:** ~100ms (from speech start to detection)
-- **Echo cancellation:** Real-time (hardware-assisted)
-
-### Compatibility
-- **Desktop:** Chrome, Firefox, Safari, Edge (all modern versions)
-- **Mobile:** iOS Safari, Chrome Android (with limitations)
-- **Echo cancellation:** Supported on all devices with `getUserMedia`
 
 ## Browser Support
 
 | Feature | Chrome | Firefox | Safari | Edge |
 |---------|--------|---------|--------|------|
+| Web Speech API (TTS) | ✅ | ✅ | ✅ | ✅ |
+| getUserMedia | ✅ | ✅ | ✅ | ✅ |
 | Echo Cancellation | ✅ | ✅ | ✅ | ✅ |
-| Noise Suppression | ✅ | ✅ | ⚠️ | ✅ |
+| Noise Suppression | ✅ | ✅ | ⚠️ limited | ✅ |
 | Web Audio API | ✅ | ✅ | ✅ | ✅ |
-| Media Recorder | ✅ | ✅ | ✅ | ✅ |
 
 ## Troubleshooting
 
-### Barge-in Not Detecting
+### Barge-in Not Working
 
-**Problem:** User speech isn't detected while bot is speaking.
+**Problem:** Interruptions aren't being detected.
 
-**Solution:** 
-1. Increase speaker volume (bot audio needs to be loud enough for barge-in)
-2. Adjust `bargeInThreshold` (lower = more sensitive):
-   ```typescript
-   new DuplexAudioService({ bargeInThreshold: 0.01 });
-   ```
-3. Check microphone permissions and input levels
+**Cause & Solution:**
+1. **Speaker volume too low** — Bot audio is too quiet for user to speak over
+   - Increase speaker/system volume
+   - Test in a quiet environment
+   
+2. **Microphone too far away** — User's voice is too quiet relative to bot
+   - Move closer to the microphone
+   - Check mic input levels in system settings
+   
+3. **Threshold too high** — Lower the `BARGE_IN_RMS` constant
+   - Reduce from 0.04 to 0.03 or 0.02
+   - Reduce `BARGE_IN_CHUNKS` from 2 to 1
+   
+4. **Echo cancellation fighting you** — On some hardware, echo cancellation filters user speech too
+   - Test without echo cancellation (remove from `getUserMedia` constraints)
 
-### Echo Not Cancelled
+### Barge-in Too Sensitive
 
-**Problem:** User hears bot audio echoing through microphone.
+**Problem:** Every small sound triggers an interruption.
 
-**Solution:**
-1. Ensure speaker and mic aren't too close
-2. Enable echo cancellation explicitly:
-   ```typescript
-   new DuplexAudioService({ enableEchoCancellation: true });
-   ```
-3. Test in DevTools: check `getUserMedia` constraints
+**Cause & Solution:**
+1. **Threshold too low** — Increase `BARGE_IN_RMS`
+   - Increase from 0.04 to 0.05 or 0.06
+   
+2. **Noisy environment** — Background noise registers as speech
+   - Move to a quieter location
+   - Increase `BARGE_IN_CHUNKS` from 2 to 3 or 4 (requires longer sustained sound)
+   
+3. **Loud fan/AC** — Constant background noise
+   - Disable `noiseSuppression` if the browser's implementation isn't helping
+   - Or increase threshold further
 
-### VAD Too Sensitive
+### Web Speech API Timing Out
 
-**Problem:** Background noise triggers speech detection.
+**Problem:** Bot stops speaking before finishing.
 
-**Solution:**
-1. Increase threshold:
-   ```typescript
-   new VADService({ threshold: 0.03 });
-   ```
-2. Increase min silence duration:
-   ```typescript
-   new VADService({ minSilenceDuration: 1000 });
-   ```
-3. Use in quiet environment
+**Cause:** Web Speech API has internal timeouts (browser-dependent).
 
-## Testing
+**Solution:** Already implemented — recent updates increased timeout handling for longer utterances.
 
-### Manual Testing
+## Performance Notes
 
-1. Navigate to `/duplex` page
-2. Initialize engine
-3. Click "Start Listening"
-4. Speak a phrase
-5. While bot is responding, interrupt with "stop" or any other word
-6. Observe barge-in indicator and bot speech stopping
-
-### Automated Testing
-
-```typescript
-// Example test
-describe('DuplexAudioService', () => {
-  it('should detect barge-in when user speaks while bot is speaking', async () => {
-    const service = new DuplexAudioService();
-    let bargeInDetected = false;
-
-    service.onBargeIn((event) => {
-      bargeInDetected = event.detected;
-    });
-
-    await service.startRecording();
-    service.speakText('Hello');
-    
-    // Simulate user speaking
-    // ... audio injection ...
-
-    expect(bargeInDetected).toBe(true);
-  });
-});
-```
+- **Latency:** Barge-in detection is ~256ms (one audio chunk) after the threshold is met; actual interrupt stops speech in the next 50-100ms
+- **CPU:** Negligible — RMS calculation is lightweight
+- **Memory:** Barge-in buffer holds at most 2-4 chunks (~32-64KB each)
 
 ## Future Improvements
 
-- [ ] Endpoint detection using more advanced ML models
-- [ ] Opus codec for better compression and latency
-- [ ] WebRTC data channels for network duplex
-- [ ] Custom VAD using TensorFlow.js models
-- [ ] Speaker diarization (distinguish multiple speakers)
-- [ ] Sentiment analysis on interruptions
+- [ ] Configurable RMS threshold via UI
+- [ ] Real-time RMS visualization for debugging
+- [ ] Adaptive threshold based on environment noise
+- [ ] Machine learning-based VAD (more accurate than RMS)
+- [ ] Speaker diarization (distinguish user from bot)
 
 ## References
 
 - [Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
-- [MediaRecorder API](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder)
 - [getUserMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
-- [Speech Synthesis API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)
+- [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)
+- [Root Mean Square (RMS)](https://en.wikipedia.org/wiki/Root_mean_square)
