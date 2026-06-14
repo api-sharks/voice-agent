@@ -193,23 +193,67 @@ export function VoiceChatDuplex() {
         },
       ];
 
-      // Generate response from LLM
+      // Stream response tokens and speak as sentences complete
       setBotSpeakingStatus(true);
       let fullResponse = '';
+      let sentenceBuffer = '';
+      const speakingQueue: Promise<void>[] = [];
 
       try {
-        console.log('[Duplex] Generating response...');
-        fullResponse = await webllmService.generateResponse(llmMessages);
-        console.log('[Duplex] Response generated:', fullResponse);
+        console.log('[Duplex] Streaming response...');
+        await webllmService.streamResponse(
+          llmMessages,
+          (token) => {
+            console.log('[Streaming] Token:', token);
+            fullResponse += token;
+            sentenceBuffer += token;
 
-        if (fullResponse.trim()) {
-          console.log('[Duplex] Speaking response...');
-          await duplexAudioService.speakText(fullResponse);
-          console.log('[Duplex] Response spoken');
+            // Check if we have a complete sentence
+            const sentenceEnders = ['. ', '! ', '? ', '.\n', '!\n', '?\n'];
+            let hasSentenceEnd = sentenceEnders.some(ender => sentenceBuffer.includes(ender));
+
+            // Also speak on certain punctuation even without space
+            if (!hasSentenceEnd && sentenceBuffer.match(/[.!?]$/)) {
+              hasSentenceEnd = true;
+            }
+
+            // Speak when we have a complete sentence or buffer gets large
+            if ((hasSentenceEnd && sentenceBuffer.trim().length > 0) || sentenceBuffer.length > 100) {
+              const textToSpeak = sentenceBuffer.trim();
+              if (textToSpeak) {
+                console.log('[Duplex] Speaking sentence:', textToSpeak);
+                // Queue the speech without waiting (fire and forget for true streaming)
+                // But limit concurrent speech to 2 to avoid overwhelming the API
+                if (speakingQueue.length < 2) {
+                  const speakPromise = duplexAudioService.speakText(textToSpeak).then(
+                    () => {
+                      speakingQueue.splice(speakingQueue.indexOf(speakPromise), 1);
+                    },
+                    () => {
+                      speakingQueue.splice(speakingQueue.indexOf(speakPromise), 1);
+                    }
+                  );
+                  speakingQueue.push(speakPromise);
+                }
+                sentenceBuffer = '';
+              }
+            }
+          }
+        );
+
+        // Speak any remaining text
+        if (sentenceBuffer.trim()) {
+          console.log('[Duplex] Speaking final:', sentenceBuffer.trim());
+          const speakPromise = duplexAudioService.speakText(sentenceBuffer.trim());
+          speakingQueue.push(speakPromise);
         }
+
+        // Wait for all speech to complete
+        await Promise.all(speakingQueue);
+        console.log('[Duplex] All speech completed');
       } catch (err) {
-        console.error('[Duplex] LLM error:', err);
-        setError(`LLM Error: ${err instanceof Error ? err.message : 'Unknown'}`);
+        console.error('[Duplex] Streaming error:', err);
+        setError(`Error: ${err instanceof Error ? err.message : 'Unknown'}`);
       } finally {
         setBotSpeakingStatus(false);
       }
