@@ -85,12 +85,15 @@ export class WebSpeechService {
     };
 
     this.recognition.onend = () => {
-      console.log('Web Speech Recognition ended');
+      console.log('Web Speech Recognition ended, transcript:', this.transcript.trim() || 'empty');
       this.isListening = false;
 
       // Emit final transcript
       if (this.transcript.trim()) {
         this.listeners.forEach(listener => listener(this.transcript.trim()));
+      } else {
+        // No speech was captured - notify error listeners
+        this.errorListeners.forEach(listener => listener('no-speech'));
       }
       this.transcript = '';
     };
@@ -105,37 +108,20 @@ export class WebSpeechService {
       this.transcript = '';
       let hasResolved = false;
       let timeoutId: NodeJS.Timeout | null = null;
-      let errorHandler: ((error: string) => void) | null = null;
+
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        this.listeners = this.listeners.filter(l => l !== listener);
+      };
 
       const listener = (text: string) => {
         if (hasResolved) return;
         hasResolved = true;
-        if (timeoutId) clearTimeout(timeoutId);
-        if (errorHandler) {
-          this.errorListeners = this.errorListeners.filter(l => l !== errorHandler);
-        }
-        this.listeners = this.listeners.filter(l => l !== listener);
+        cleanup();
         resolve(text);
       };
 
-      errorHandler = (error: string) => {
-        if (hasResolved) return;
-        if (error === 'no-speech') {
-          hasResolved = true;
-          if (timeoutId) clearTimeout(timeoutId);
-          this.errorListeners = this.errorListeners.filter(l => l !== errorHandler);
-          this.listeners = this.listeners.filter(l => l !== listener);
-          try {
-            this.recognition.stop();
-          } catch (e) {
-            // Already stopped
-          }
-          reject(new Error('No speech detected. Please speak clearly and try again.'));
-        }
-      };
-
       this.listeners.push(listener);
-      this.errorListeners.push(errorHandler);
 
       try {
         this.recognition.start();
@@ -143,35 +129,21 @@ export class WebSpeechService {
         // Already listening or error starting
         console.warn('Recognition error:', error);
         reject(error);
+        return;
       }
 
-      // Timeout after 15 seconds (Web Speech API typically handles its own timeout)
+      // Timeout after 12 seconds
       timeoutId = setTimeout(() => {
         if (hasResolved) return;
         hasResolved = true;
-        if (errorHandler) {
-          this.errorListeners = this.errorListeners.filter(l => l !== errorHandler);
-        }
-        this.listeners = this.listeners.filter(l => l !== listener);
+        cleanup();
         try {
           this.recognition.stop();
         } catch (e) {
           // Already stopped
         }
-        reject(new Error('Speech recognition timeout - please try again'));
-      }, 15000);
-
-      // Clear timeout when we get a result
-      const originalListener = this.listeners[this.listeners.length - 1];
-      if (originalListener) {
-        this.listeners[this.listeners.length - 1] = (text: string) => {
-          if (!hasResolved) {
-            hasResolved = true;
-            if (timeoutId) clearTimeout(timeoutId);
-            originalListener(text);
-          }
-        };
-      }
+        reject(new Error('No speech detected. Please speak clearly and try again.'));
+      }, 12000);
     });
   }
 
