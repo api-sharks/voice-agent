@@ -2,6 +2,9 @@
 
 **Angular 17 standalone application** for a conversational voice-driven form collection with barge-in (interrupt) support.
 
+> 📖 **[Full Documentation](https://yourusername.github.io/voice-agent/)** — Read the comprehensive docs on GitHub Pages  
+> 💡 **[Contributing Guide](./CONTRIBUTING-DOCS.md)** — Help improve the docs
+
 ## Features
 
 - 🎤 **Microphone capture** — Real-time audio input at 16kHz mono
@@ -133,11 +136,36 @@ turbo run build
 | Whisper too slow | Model is on HDD? Move to SSD, or pre-load via DevTools |
 | Parser misses city | Add to regex in `ParserService`, or use "change my city to X" |
 
+## Documentation
+
+Comprehensive documentation is available in two places:
+
+### 📖 Docusaurus Site
+Full documentation with guides, API reference, and troubleshooting:
+
+```bash
+npm run docs:dev      # Start docs preview (http://localhost:3000)
+npm run docs:build    # Build for production
+```
+
+**View online:** https://yourusername.github.io/voice-agent/
+
+### 📝 Contributing to Docs
+Want to improve the documentation?
+
+1. Read [CONTRIBUTING-DOCS.md](./CONTRIBUTING-DOCS.md)
+2. Use helper script: `./scripts/docs-helper.sh new <category> <page>`
+3. Preview: `npm run docs:dev`
+4. Submit PR with your changes
+
+See [DEPLOY.md](./packages/docs/DEPLOY.md) for GitHub Pages setup.
+
 ## Next Steps
 
-- Customize the form fields in `AgentService`
-- Add more languages by extending `ParserService`
-- Integrate a real LLM backend via REST API
-- Deploy to production with proper CORS/isolation headers
+- 📖 **Read the docs** — Full guides at [documentation site](https://yourusername.github.io/voice-agent/)
+- 🔧 **Customize** — Modify form fields in `AgentService`
+- 🌍 **Add languages** — Extend `ParserService` regex patterns
+- ⚙️ **Integrate backend** — Add REST API or WebSocket backend
+- 🚀 **Deploy** — Production setup with CORS/isolation headers
 
 See [CLAUDE.md](./CLAUDE.md) for architecture deep-dive.
