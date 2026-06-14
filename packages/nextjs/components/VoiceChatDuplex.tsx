@@ -30,11 +30,15 @@ export function VoiceChatDuplex() {
   const [bargeInDetected, setBargeInDetected] = useState(false);
   const [userSpeakingStatus, setUserSpeakingStatus] = useState(false);
   const [botSpeakingStatus, setBotSpeakingStatus] = useState(false);
+  const [partialTranscript, setPartialTranscript] = useState('');
 
   const loopModeRef = useRef(false);
   const bargeInUnsubscribe = useRef<(() => void) | null>(null);
   const vadUnsubscribe = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const streamingActiveRef = useRef(false);
+  const partialTranscriptRef = useRef('');
+  const unsubscribesRef = useRef<Array<() => void>>([]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -125,6 +129,9 @@ export function VoiceChatDuplex() {
     setError('');
     setIsListening(true);
     setBargeInDetected(false);
+    setPartialTranscript('');
+    partialTranscriptRef.current = '';
+    streamingActiveRef.current = true;
 
     try {
       if (!webSpeechService.isSupported()) {
@@ -133,16 +140,60 @@ export function VoiceChatDuplex() {
         return;
       }
 
-      // Start duplex audio recording (with echo cancellation and VAD)
+      // Start duplex audio recording
       await duplexAudioService.startRecording();
 
-      // Use web speech to transcribe user speech
-      // This will be interrupted if user speaks while bot is responding (barge-in)
-      const userText = await webSpeechService.transcribe();
+      // Set up streaming transcription listeners
+      const unsubscribePartial = webSpeechService.onPartialResult((partial) => {
+        partialTranscriptRef.current = partial;
+        setPartialTranscript(partial);
+        console.log('[Streaming] Partial:', partial);
+      });
+
+      let finalUserText = '';
+      const unsubscribeFinal = webSpeechService.onFinalResult((final) => {
+        finalUserText += final + ' ';
+        console.log('[Streaming] Final:', final);
+      });
+
+      unsubscribesRef.current = [unsubscribePartial, unsubscribeFinal];
+
+      // Start streaming transcription (non-blocking)
+      await webSpeechService.startStreaming();
+
+      // Wait for user to start speaking (or timeout after 30s if idle)
+      let waitTimeout: NodeJS.Timeout | null = null;
+      const waitForSpeech = new Promise<string>((resolve) => {
+        waitTimeout = setTimeout(() => {
+          if (!finalUserText.trim()) {
+            console.log('[Streaming] Timeout - no speech detected');
+            resolve('');
+          }
+        }, 30000);
+
+        // Continue waiting until user finishes speaking (based on VAD)
+        const checkSpeech = setInterval(() => {
+          if (!streamingActiveRef.current) {
+            clearInterval(checkSpeech);
+            if (waitTimeout) clearTimeout(waitTimeout);
+            resolve(finalUserText.trim());
+          }
+        }, 100);
+      });
+
+      const userText = await waitForSpeech;
+
+      // Clean up listeners
+      unsubscribesRef.current.forEach(unsub => unsub());
+      unsubscribesRef.current = [];
+
+      // Stop streaming transcription
+      await webSpeechService.stopStreaming();
 
       if (!userText.trim()) {
         setError('No speech detected. Please try again.');
         setIsListening(false);
+        setPartialTranscript('');
         duplexAudioService.cancelRecording();
         if (loopModeRef.current) {
           setTimeout(() => handleStartListening(), 500);
@@ -158,8 +209,10 @@ export function VoiceChatDuplex() {
       };
       setMessages(prev => [...prev, userMessage]);
       setIsListening(false);
+      setPartialTranscript('');
       setIsProcessing(true);
 
+      // Build context for LLM
       const llmMessages: LLMMessage[] = [
         {
           role: 'system',
@@ -175,43 +228,66 @@ export function VoiceChatDuplex() {
         },
       ];
 
-      const assistantText = await webllmService.generateResponse(llmMessages);
+      // Stream response tokens and speak as they arrive
+      let fullResponse = '';
+      setBotSpeakingStatus(true);
+
+      const unsubscribeError = webSpeechService.onError((error) => {
+        if (error === 'no-speech') {
+          streamingActiveRef.current = false;
+        }
+      });
+
+      try {
+        await webllmService.streamResponse(
+          llmMessages,
+          (token) => {
+            fullResponse += token;
+            // Start speaking immediately when we have enough tokens
+            // This enables true duplex - bot speaking while processing
+            if (fullResponse.length > 0) {
+              console.log('[Streaming] Token:', token);
+            }
+          }
+        );
+
+        // Speak the accumulated response
+        await duplexAudioService.speakText(fullResponse);
+      } finally {
+        unsubscribeError();
+        setBotSpeakingStatus(false);
+      }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: assistantText,
+        content: fullResponse,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, assistantMessage]);
-
-      // Speak response with duplex support (allows barge-in while recording continues)
-      // Recording continues in background, monitoring for user interruption
-      setBotSpeakingStatus(true);
-      await duplexAudioService.speakText(assistantText);
-      setBotSpeakingStatus(false);
-
       setIsProcessing(false);
 
-      // Check if user interrupted (barge-in detected)
+      // Handle barge-in or loop mode
       if (bargeInDetected) {
-        console.log('[Duplex] User interrupted - processing next input immediately');
-        // Reset barge-in flag and continue listening
+        console.log('[Duplex] User interrupted - restarting immediately');
         setBargeInDetected(false);
-        setTimeout(() => handleStartListening(), 200);
+        streamingActiveRef.current = false;
+        setTimeout(() => handleStartListening(), 100);
       } else if (loopModeRef.current) {
-        // Auto-restart in loop mode only if not interrupted
+        streamingActiveRef.current = false;
         setTimeout(() => handleStartListening(), 500);
       } else {
-        // Stop recording if not in loop mode and no barge-in
         await duplexAudioService.stopRecording();
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      console.error('Speech recognition error:', err);
+      console.error('Duplex error:', err);
       setError(`Failed: ${errorMsg}`);
       setIsListening(false);
       setIsProcessing(false);
+      setPartialTranscript('');
+      streamingActiveRef.current = false;
+      unsubscribesRef.current.forEach(unsub => unsub());
       duplexAudioService.cancelRecording();
     }
   };
@@ -354,6 +430,15 @@ export function VoiceChatDuplex() {
               </div>
             </div>
           ))}
+
+          {/* Streaming Partial Transcript */}
+          {partialTranscript && (
+            <div className="flex justify-end">
+              <div className="max-w-xs lg:max-w-md px-4 py-3 rounded-lg bg-blue-500 text-white rounded-br-none opacity-75">
+                <p className="break-words text-sm italic">{partialTranscript}</p>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-900 text-red-100 p-4 rounded-lg border border-red-700">

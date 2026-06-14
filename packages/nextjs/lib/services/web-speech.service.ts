@@ -7,6 +7,8 @@ export class WebSpeechService {
   private transcript = '';
   private listeners: ((text: string) => void)[] = [];
   private errorListeners: ((error: string) => void)[] = [];
+  private partialListeners: ((text: string) => void)[] = [];
+  private finalListeners: ((text: string) => void)[] = [];
 
   private constructor() {
     // Initialize Web Speech API
@@ -44,20 +46,27 @@ export class WebSpeechService {
 
     this.recognition.onresult = (event: any) => {
       let interimTranscript = '';
+      let finalTranscript = '';
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
 
         if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
           this.transcript += transcript + ' ';
         } else {
           interimTranscript += transcript;
         }
       }
 
-      // Log interim results for feedback
+      // Emit interim results (streaming)
       if (interimTranscript) {
-        console.log('Interim: ' + interimTranscript);
+        this.partialListeners.forEach(listener => listener(interimTranscript));
+      }
+
+      // Emit final results immediately
+      if (finalTranscript) {
+        this.finalListeners.forEach(listener => listener(finalTranscript.trim()));
       }
     };
 
@@ -198,6 +207,61 @@ export class WebSpeechService {
     return () => {
       this.errorListeners = this.errorListeners.filter(l => l !== listener);
     };
+  }
+
+  /**
+   * Subscribe to partial (interim) transcription results in real-time
+   */
+  onPartialResult(listener: (text: string) => void): () => void {
+    this.partialListeners.push(listener);
+    return () => {
+      this.partialListeners = this.partialListeners.filter(l => l !== listener);
+    };
+  }
+
+  /**
+   * Subscribe to final transcription results
+   */
+  onFinalResult(listener: (text: string) => void): () => void {
+    this.finalListeners.push(listener);
+    return () => {
+      this.finalListeners = this.finalListeners.filter(l => l !== listener);
+    };
+  }
+
+  /**
+   * Start streaming transcription (keeps listening, emits results as they come)
+   * Use onPartialResult and onFinalResult to get results
+   */
+  async startStreaming(): Promise<void> {
+    if (!this.recognition) {
+      throw new Error('Web Speech API not supported in this browser');
+    }
+
+    this.transcript = '';
+    this.isListening = true;
+
+    try {
+      this.recognition.start();
+      console.log('Web Speech Recognition streaming started');
+    } catch (error) {
+      console.warn('Recognition already in progress');
+    }
+  }
+
+  /**
+   * Stop streaming transcription and return accumulated transcript
+   */
+  async stopStreaming(): Promise<string> {
+    if (!this.recognition) return this.transcript;
+
+    try {
+      this.recognition.stop();
+    } catch (error) {
+      console.error('Error stopping streaming:', error);
+    }
+
+    return this.transcript.trim();
   }
 }
 
