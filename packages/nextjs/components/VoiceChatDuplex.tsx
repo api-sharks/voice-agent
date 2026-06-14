@@ -136,6 +136,8 @@ export function VoiceChatDuplex() {
       // Start duplex audio recording (with echo cancellation and VAD)
       await duplexAudioService.startRecording();
 
+      // Use web speech to transcribe user speech
+      // This will be interrupted if user speaks while bot is responding (barge-in)
       const userText = await webSpeechService.transcribe();
 
       if (!userText.trim()) {
@@ -157,9 +159,6 @@ export function VoiceChatDuplex() {
       setMessages(prev => [...prev, userMessage]);
       setIsListening(false);
       setIsProcessing(true);
-
-      // Stop recording
-      await duplexAudioService.stopRecording();
 
       const llmMessages: LLMMessage[] = [
         {
@@ -186,16 +185,26 @@ export function VoiceChatDuplex() {
       };
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Speak response with duplex support (allows barge-in)
+      // Speak response with duplex support (allows barge-in while recording continues)
+      // Recording continues in background, monitoring for user interruption
       setBotSpeakingStatus(true);
       await duplexAudioService.speakText(assistantText);
       setBotSpeakingStatus(false);
 
       setIsProcessing(false);
 
-      // Auto-restart in loop mode
-      if (loopModeRef.current) {
+      // Check if user interrupted (barge-in detected)
+      if (bargeInDetected) {
+        console.log('[Duplex] User interrupted - processing next input immediately');
+        // Reset barge-in flag and continue listening
+        setBargeInDetected(false);
+        setTimeout(() => handleStartListening(), 200);
+      } else if (loopModeRef.current) {
+        // Auto-restart in loop mode only if not interrupted
         setTimeout(() => handleStartListening(), 500);
+      } else {
+        // Stop recording if not in loop mode and no barge-in
+        await duplexAudioService.stopRecording();
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
