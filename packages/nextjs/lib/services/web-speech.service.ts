@@ -127,6 +127,7 @@ export class WebSpeechService {
         if (hasResolved) return;
         hasResolved = true;
         cleanup();
+        console.log('[WebSpeech] Resolving with text:', text);
         resolve(text);
       };
 
@@ -151,7 +152,14 @@ export class WebSpeechService {
         } catch (e) {
           // Already stopped
         }
-        reject(new Error('No speech detected. Please speak clearly and try again.'));
+        // Check if we actually got some transcript before rejecting
+        if (this.transcript.trim()) {
+          console.log('[WebSpeech] Timeout but got transcript:', this.transcript);
+          resolve(this.transcript.trim());
+        } else {
+          console.log('[WebSpeech] Timeout with no transcript');
+          reject(new Error('No speech detected. Please speak clearly and try again.'));
+        }
       }, 12000);
     });
   }
